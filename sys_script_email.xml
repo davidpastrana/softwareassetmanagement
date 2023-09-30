@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<unload unload_date="2023-09-30 02:25:48">
+<sys_script_email action="INSERT_OR_UPDATE">
+<name>email.script.createpo.notification</name>
+<new_lines_to_html>false</new_lines_to_html>
+<script><![CDATA[(function runMailScript(template, event) {
+
+	var emailBodyData = JSON.parse(event.parm1);
+    template.print('We have identified <b>' + emailBodyData.totalItems + '</b> contracts nearing expiration for the following vendors: <b>' + emailBodyData.totalVendors + '</b>.<br><br>Details can be accessed from the following link: <a href="' + emailBodyData.urlLink + '">link</a>.<br>');
+	template.print('Date of Notice: '+emailBodyData.currentDate);
+
+})(template, event);]]></script>
+<sys_class_name>sys_script_email</sys_class_name>
+<sys_created_by>dpastrana</sys_created_by>
+<sys_created_on>2023-08-10 18:14:25</sys_created_on>
+<sys_id>5822354a1becb510b02cfdd49b4bcbcf</sys_id>
+<sys_mod_count>4</sys_mod_count>
+<sys_name>email.script.createpo.notification</sys_name>
+<sys_package display_value="Global" source="global">global</sys_package>
+<sys_policy/>
+<sys_scope display_value="Global">global</sys_scope>
+<sys_update_name>sys_script_email_5822354a1becb510b02cfdd49b4bcbcf</sys_update_name>
+<sys_updated_by>dpastrana</sys_updated_by>
+<sys_updated_on>2023-08-10 19:54:37</sys_updated_on>
+</sys_script_email>
+<sys_script_email action="INSERT_OR_UPDATE">
+<name>email.script.overlicensed.notification</name>
+<new_lines_to_html>false</new_lines_to_html>
+<script><![CDATA[(function runMailScript(template, event) {
+
+	var emailBodyData = JSON.parse(event.parm1);
+    template.print('We have identified <b>' + emailBodyData.totalItems + '</b> over-licensed products with a total cost of <b>' + emailBodyData.totalCosts + '</b>.<br><br>Details can be accessed from the following link: <a href="' + emailBodyData.urlLink + '">link</a>.<br>');
+	template.print('Date of Notice: '+emailBodyData.currentDate);
+
+})(template, event);]]></script>
+<sys_class_name>sys_script_email</sys_class_name>
+<sys_created_by>dpastrana</sys_created_by>
+<sys_created_on>2023-08-06 19:46:50</sys_created_on>
+<sys_id>47e0e5f81b2c7110b02cfdd49b4bcb64</sys_id>
+<sys_mod_count>32</sys_mod_count>
+<sys_name>email.script.overlicensed.notification</sys_name>
+<sys_package display_value="Global" source="global">global</sys_package>
+<sys_policy/>
+<sys_scope display_value="Global">global</sys_scope>
+<sys_update_name>sys_script_email_47e0e5f81b2c7110b02cfdd49b4bcb64</sys_update_name>
+<sys_updated_by>dpastrana</sys_updated_by>
+<sys_updated_on>2023-08-10 18:52:43</sys_updated_on>
+</sys_script_email>
+</unload>
