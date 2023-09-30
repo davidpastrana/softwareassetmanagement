@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<unload unload_date="2023-09-30 02:24:13">
+<sysevent_register action="INSERT_OR_UPDATE">
+<caller_access/>
+<derived_priority>100</derived_priority>
+<description>Send notification if a purchase order is required</description>
+<event_name>sam.automation.createpo.notification</event_name>
+<fired_by>Scheduled job</fired_by>
+<priority>100</priority>
+<queue/>
+<suffix/>
+<sys_class_name>sysevent_register</sys_class_name>
+<sys_created_by>dpastrana</sys_created_by>
+<sys_created_on>2023-08-10 19:27:29</sys_created_on>
+<sys_id>a6d2ca8a1b20f510b02cfdd49b4bcb04</sys_id>
+<sys_mod_count>0</sys_mod_count>
+<sys_name>sam.automation.createpo.notification</sys_name>
+<sys_package display_value="Global" source="global">global</sys_package>
+<sys_policy/>
+<sys_scope display_value="Global">global</sys_scope>
+<sys_update_name>sysevent_register_a6d2ca8a1b20f510b02cfdd49b4bcb04</sys_update_name>
+<sys_updated_by>dpastrana</sys_updated_by>
+<sys_updated_on>2023-08-10 19:27:29</sys_updated_on>
+<table/>
+</sysevent_register>
+<sysevent_register action="INSERT_OR_UPDATE">
+<caller_access/>
+<derived_priority>100</derived_priority>
+<description>Send notification on a retired user or device</description>
+<event_name>sam.automation.retirealloc.notification</event_name>
+<fired_by>Scheduled job</fired_by>
+<priority>100</priority>
+<queue/>
+<suffix/>
+<sys_class_name>sysevent_register</sys_class_name>
+<sys_created_by>dpastrana</sys_created_by>
+<sys_created_on>2023-08-06 18:38:55</sys_created_on>
+<sys_id>186119781be87110b02cfdd49b4bcbc7</sys_id>
+<sys_mod_count>3</sys_mod_count>
+<sys_name>sam.automation.retirealloc.notification</sys_name>
+<sys_package display_value="Global" source="global">global</sys_package>
+<sys_policy/>
+<sys_scope display_value="Global">global</sys_scope>
+<sys_update_name>sysevent_register_186119781be87110b02cfdd49b4bcbc7</sys_update_name>
+<sys_updated_by>dpastrana</sys_updated_by>
+<sys_updated_on>2023-08-10 19:23:26</sys_updated_on>
+<table/>
+</sysevent_register>
+<sysevent_register action="INSERT_OR_UPDATE">
+<caller_access/>
+<derived_priority>100</derived_priority>
+<description>Send notification if there are overlicensed costs</description>
+<event_name>sam.automation.overlicensed.notification</event_name>
+<fired_by>Scheduled job</fired_by>
+<priority>100</priority>
+<queue/>
+<suffix/>
+<sys_class_name>sysevent_register</sys_class_name>
+<sys_created_by>dpastrana</sys_created_by>
+<sys_created_on>2023-08-06 18:36:52</sys_created_on>
+<sys_id>745015781be87110b02cfdd49b4bcb02</sys_id>
+<sys_mod_count>3</sys_mod_count>
+<sys_name>sam.automation.overlicensed.notification</sys_name>
+<sys_package display_value="Global" source="global">global</sys_package>
+<sys_policy/>
+<sys_scope display_value="Global">global</sys_scope>
+<sys_update_name>sysevent_register_745015781be87110b02cfdd49b4bcb02</sys_update_name>
+<sys_updated_by>dpastrana</sys_updated_by>
+<sys_updated_on>2023-08-10 19:23:13</sys_updated_on>
+<table/>
+</sysevent_register>
+</unload>
