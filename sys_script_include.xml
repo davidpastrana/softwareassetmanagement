@@ -1,0 +1,549 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<unload unload_date="2023-09-30 02:37:25">
+<sys_script_include action="INSERT_OR_UPDATE">
+<access>package_private</access>
+<active>true</active>
+<api_name>global.SAMAutomationUtils</api_name>
+<caller_access/>
+<client_callable>true</client_callable>
+<description>Automations most liketly to implement:
+1. User and device allocation based on a Service Request
+2. Automate System Import with script (using json format)
+3. License purchase automation
+4. Retire allocations to a licensed software</description>
+<name>SAMAutomationUtils</name>
+<script><![CDATA[var SAMAutomationUtils = Class.create();
+
+SAMAutomationUtils.prototype = Object.extendsObject(AbstractAjaxProcessor, {
+
+    /*** Eg: A PO with 50 licensed userList requires a manual task to assign userList or devices one by one. This can be automated within a workflow using the below 2 methods ***/
+
+    //allocate one software entitlement to multiple userList
+    /** example:
+		var samAuto = new SAMAutomationUtils();
+		var userList = "David Pastrana, Alexander Cora";
+		var softwareLicense = "E3 - Microsoft Windows Server Standard";
+		samAuto.oneLicenseToManyUsers(userList, softwareLicense);
+	**/
+    oneLicenseToManyUsers: function(userList, entitlement) {
+
+        userList = userList.split(',');
+
+        gs.print('userList ' + userList);
+
+        var validLicense = new GlideRecord('alm_license');
+        if (!validLicense.get('display_name', entitlement)) {
+            gs.print('Exit: entitlement provided does not exit.');
+            return;
+        }
+
+        gs.print('license: ' + entitlement);
+
+        var userAllocGR = new GlideRecord('alm_entitlement_user');
+        userAllocGR.initialize();
+
+        for (var i in userList) {
+
+            gs.print('user: ' + userList[i]);
+
+            var validateUser = new GlideRecord('sys_user');
+            if (validateUser.get('name', userList[i])) {
+                userAllocGR.assigned_to = validateUser.sys_id;
+                userAllocGR.licensed_by = validLicense.sys_id;
+                userAllocGR.quantity = 1;
+                userAllocGR.insert();
+                gs.print('License ' + entitlement + ', properly assigned to user ' + userList[i]);
+            }
+        }
+    },
+
+    //allocate one software entitlement to multiple devices from a PO
+    /** example:
+		var samAuto = new SAMAutomationUtils();
+		var devicesList = "ACME Citrix License server, HR Database";
+		var deviceLicense = "E3 - Microsoft Windows Server Standard";
+		samAuto.oneLicenseToManyDevices(devicesList, deviceLicense);
+	**/
+    oneLicenseToManyDevices: function(deviceList, entitlement) {
+
+        //userList is optional, using the same order we can assign the device to its user
+
+        deviceList = deviceList.split(',');
+
+        gs.print('devices: ' + deviceList);
+
+        var validLicense = new GlideRecord('alm_license');
+        if (!validLicense.get('display_name', entitlement.toString())) {
+            gs.print('Entitlement name does not exit.');
+            return;
+        }
+
+        validLicense = new GlideRecord('alm_license');
+        if (!validLicense.get('display_name', entitlement)) return;
+
+        var deviceAllocGR = new GlideRecord('alm_entitlement_asset');
+        deviceAllocGR.initialize();
+
+        for (var i in deviceList) {
+
+            gs.print('device: ' + deviceList[i]);
+
+            var validateDevice = new GlideRecord('cmdb_ci');
+            if (validateDevice.get('name', deviceList[i])) {
+                deviceAllocGR.allocated_to = validateDevice.sys_id;
+                deviceAllocGR.licensed_by = validLicense.sys_id;
+                deviceAllocGR.quantity = 1;
+                deviceAllocGR.insert();
+                gs.print('License ' + entitlement + ', properly assigned to device ' + deviceList[i]);
+            }
+        }
+    },
+
+    //move all license allocations (user or devices) from an old to a new license
+    /** example:
+     	var samAuto = new SAMAutomationUtils();
+    	samAuto.moveLicenseAllocations('E3 - Microsoft Windows Server Standard','SW000060 - Adobe Systems Acrobat Catalog','user');
+     */
+    //type can only be of type "user" or "asset" for devices
+    moveLicenseAllocations: function(oldEntitlement, newEntitlement, type) {
+
+        var itemsList = [];
+
+        if (type != 'user' && type != 'asset') {
+            gs.print('type can only have values: user or device.');
+            return;
+        }
+
+        var oldValidLicense = new GlideRecord('alm_license');
+        if (!oldValidLicense.get('display_name', oldEntitlement)) {
+            gs.print('Old entitlement name does not exit.');
+            return;
+        }
+
+        var newValidLicense = new GlideRecord('alm_license');
+        if (!newValidLicense.get('display_name', newEntitlement)) {
+            gs.print('New entitlement name does not exit.');
+            return;
+        }
+
+        var newSoftwareModel = newValidLicense.software_model + '';
+        gs.print('New model: ' + newSoftwareModel + ', new license: ' + newValidLicense.sys_id);
+
+        var allocationGR = new GlideRecord('alm_entitlement_' + type);
+        allocationGR.addQuery('licensed_by.display_name', oldEntitlement);
+        allocationGR.query();
+        while (allocationGR.next()) {
+            allocationGR.licensed_by = newValidLicense.sys_id;
+            allocationGR.allocated_model = newSoftwareModel;
+            allocationGR.license_key = '';
+            allocationGR.update();
+            itemsList.push(allocationGR.assigned_to.name + '');
+            //gs.print(allocationGR.assigned_to.name + ' added.');
+        }
+
+        if (itemsList.length == 0) {
+            gs.print('No allocations.');
+            return;
+        }
+
+        var msg = 'All ' + type + ' allocations have been moved from (' + oldValidLicense.display_name.toString() + ') to (' + newValidLicense.display_name.toString() + ') - ' + type + 's reallocated: ' + itemsList.toString();
+        gs.print(msg);
+
+        oldValidLicense.work_notes = msg;
+        oldValidLicense.update();
+    },
+
+    /** Importing data into tables is very time consuming.
+     * The following method presents a conversion from JSON to table fields.
+     * JavaScript Object Notation (JSON) incoming data simplifies automation for:
+     * Service Requests, Web Service REST API calls or Scripted flow actions.
+     **/
+
+    //import software entitlements, user or device allocations in a single run
+    /** example
+		var samAuto = new SAMAutomationUtils();
+		var jsonData = [{
+			'asset_tag': 'DEMO TEST MS VISIO',
+			'software_model': 'b5a4ec6287bde9109120fd98cebb3541', //Microsoft Visio
+			'agreement_type': 'generic',
+			'product_type': 'subscription',
+			'subscription_period': 'monthly',
+			'unit_cost': '30.23', //euros
+			'start_date': new Date('August 6, 2023'),
+			'end_date': new Date('August 6, 2024'),
+			'metric_group': '6e2a21987f222200fa0d328c4efa915c', //Common
+			'license_metric': 'f60759f5c31222006081face81d3ae7b', //Per User
+			'unlimited_license': false, //if not to define purchased_rights field
+			'purchased_rights': 10,
+		}];
+		var tableName = "alm_license";
+		samAuto.bulkDataImport(jsonData, tableName);
+	 */
+    bulkDataImport: function(jsonData, tableName) {
+
+        var readJson = JSON.parse(JSON.stringify(jsonData));
+
+        gs.print('total elements: ' + readJson.length);
+        gs.print('JSON file read is: ' + JSON.stringify(readJson, null, 2));
+
+        var jsonFields = {};
+        var tableCallGR = new GlideRecord(tableName);
+        tableCallGR.initialize();
+
+        for (var i = 0; i < readJson.length; i++) {
+
+            var obj = readJson[i];
+
+            for (var key in obj) {
+                //gs.print('key: ' + key + ', value: ' + obj[key]);
+                jsonFields[i] = obj[key];
+                tableCallGR.setValue(key, obj[key]);
+            }
+            var response = tableCallGR.insert();
+        }
+
+        //gs.print('\n\nJSON stored in table [' + tableName + '], with response: ' + response);
+        gs.print(JSON.stringify(jsonFields, null, 2));
+
+    },
+    //recognize, match a product license from the sam tool content library
+    /* example:
+		var useOpenAI = true;
+		var samAuto = new SAMAutomationUtils();
+
+        if(useOpenAI) {
+            searchProductName = 'Red Gate Software SQL Compare';
+            message = "Format the following product " + searchProductName + " with the following json structure: {'ppn': '', 'publisher_name': '', 'product_name': '', 'product_version': '', 'product_edition': '', 'license_metric': '', 'license_type': '', 'platform_type': '', 'product_language': ''} fill publisher and product name  leaving the other fields with empty value, do not use professional, return the answer as a JSON object.";
+		    var searchProduct = samAuto.openAIHelper(message, 1024, 0.8);//.trim().replaceAll('"').replaceAll('\n');
+            gs.print(JSON.stringify(searchProduct,null,2));
+            var result = samAuto.recognizeSoftwareWithAI(searchProduct);
+            gs.print(result);
+
+        } else {
+            var searchProduct = {
+                'ppn': '',
+                'publisher_name': '',
+                'product_name': '',
+                'product_version': '',
+                'product_edition': '',
+                'license_metric': '', //Per User, Per Device, User Subscription
+                'license_type': '', //Perpetual, Subscription, Maintenance, Upgrade, Perpetual + Maintenance
+                'platform_type': '',
+                'product_language': ''
+            };
+            //gs.print(JSON.stringify(searchProduct,null,2));
+            var result = samAuto.recognizeSoftwareWithAI(searchProduct);
+            gs.print(result);
+        }
+	*/
+    recognizeSoftwareWithAI: function(jsonData) {
+
+        var json = JSON.parse(JSON.stringify(jsonData));
+        if (json.license_type.toString().toLowerCase() == 'perpetual') json.license_type = 'full';
+        if (json.license_type.toString().toLowerCase() == 'perpetual + maintenance') json.license_type = 'perpetual_maintenance';
+
+        //gs.print('JSON file read is: ' + JSON.stringify(json, null, 2));
+
+        var findProductGR = new GlideRecord('samp_sw_product_definition');
+        findProductGR.addEncodedQuery('publisher_part_numberLIKE' + json.ppn + '^entitlement_definition.sw_product.publisher.nameLIKE' + json.publisher_name + '^entitlement_definition.sw_product.prod_nameLIKE' + json.product_name + '^entitlement_definition.version_displayLIKE' + json.product_version + '^entitlement_definition.edition_displayLIKE' + json.product_edition + '^product_typeLIKE' + json.license_type + '^license_metric.nameLIKE' + json.license_metric + '^entitlement_definition.platformLIKE' + json.platform_type + '^entitlement_definition.language.languageLIKE' + json.product_language);
+        findProductGR.query();
+        gs.print('Total: [ ' + findProductGR.getRowCount() + ' ]');
+
+        var counter = 0;
+        var first50Results = [];
+        while (findProductGR.next()) {
+            var data = {};
+            data.ppn = findProductGR.publisher_part_number + '';
+            data.publisher = findProductGR.entitlement_definition.sw_product.publisher.name + '';
+            data.name = findProductGR.entitlement_definition.sw_product.prod_name + '';
+            data.version = findProductGR.entitlement_definition.version_display + '';
+            data.edition = findProductGR.entitlement_definition.edition_display;
+            data.type = findProductGR.getDisplayValue('product_type');
+            data.metric = findProductGR.license_metric.name + '';
+            data.platform = findProductGR.entitlement_definition.platform + '';
+            data.language = findProductGR.entitlement_definition.language.language + '';
+            first50Results.push(data);
+            if (counter == 50) break;
+            counter++;
+        }
+        return JSON.stringify(first50Results, null, 2);
+    },
+
+    /** Scheduled Job Notifications for managers are extremely important to notify software or hardware expiration date, overlicensed software, purchase or retirment needs. */
+
+    addCommas: function(value) {
+        return value.toFixed(2).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    },
+
+    getCurrency: function(object) {
+        return ' ' + object.over_licensed_amount.getCurrencyCode().toString();
+    },
+
+    getCurrentDate: function() {
+        var gdt = new GlideDateTime();
+        return gdt.getDisplayValue();
+    },
+
+    //overalicensed notification using event template
+    /** example:
+     	var samAuto = new SAMAutomationUtils();
+    	samAuto.overlicensedNotification();
+     */
+    overlicensedNotification: function() {
+        var itemsGR = new GlideRecord('samp_product_result');
+        var query = "over_licensed_amount>javascript:global.getCurrencyFilter('samp_product_result','over_licensed_amount', 'EUR;0')";
+        itemsGR.addEncodedQuery(query);
+        itemsGR.query();
+
+        if (!itemsGR.hasNext()) return;
+
+        var totalItems = 0;
+        var totalCosts = 0;
+        while (itemsGR.next()) {
+            totalItems++;
+            totalCosts += parseFloat(itemsGR.over_licensed_amount.getValue());
+        }
+        totalCosts = this.addCommas(totalCosts) + this.getCurrency(itemsGR);
+
+        var urlLink = gs.getProperty('glide.servlet.uri') + 'samp_product_result_list.do?sysparm_query=' + query;
+
+        var emailData = {
+            'currentDate': this.getCurrentDate(),
+            'totalItems': totalItems,
+            'totalCosts': totalCosts,
+            'urlLink': urlLink
+        };
+        emailData = JSON.stringify(emailData);
+
+        gs.eventQueue('sam.automation.overlicensed.notification', current, emailData);
+    },
+
+    //create PO notification before expiring a contract (5 daysofweek ahead)
+    /** example:
+     	var samAuto = new SAMAutomationUtils();
+    	samAuto.createPurchaseOrderNotification();
+     */
+    createPurchaseOrderNotification: function() {
+        var itemsGR = new GlideRecord('ast_contract');
+        var maxDaysRange = 500;
+        var query = 'endsRELATIVEGT@dayofweek@ahead@5^endsRELATIVELT@dayofweek@ahead@' + maxDaysRange;
+        itemsGR.addEncodedQuery(query);
+        itemsGR.query();
+
+        if (!itemsGR.hasNext()) return;
+
+        var totalItems = 0;
+        var totalVendors = [];
+        while (itemsGR.next()) {
+            totalItems++;
+            totalVendors.push((itemsGR.vendor.name) ? itemsGR.vendor.name + '' : 'empty');
+        }
+
+        var urlLink = gs.getProperty('glide.servlet.uri') + 'ast_contract_list.do?sysparm_query=' + query;
+
+        var emailData = {
+            'currentDate': this.getCurrentDate(),
+            'totalItems': totalItems,
+            'totalVendors': totalVendors,
+            'urlLink': urlLink
+        };
+        emailData = JSON.stringify(emailData);
+
+        gs.eventQueue('sam.automation.createpo.notification', current, emailData);
+    },
+
+    jsonParse: function(data) {
+        return JSON.parse(JSON.stringify(data));
+    },
+
+    /** New features of using Artificial Intelligence to support ITAM decisions */
+
+    //provide AI recommendation on licenses with a total cost exceeding $1M
+    /** example:
+        //Recommendations for 1M spent in software entitlements
+        var samAuto = new SAMAutomationUtils();
+        var licGR = new GlideRecord('alm_license');
+        licGR.addEncodedQuery("cost>javascript:global.getCurrencyFilter('alm_license','cost', 'EUR;1000000')^install_status=1");
+        licGR.query();
+
+        var list =[];
+        var data = {};
+        while(licGR.next()) {
+            data.license_name = licGR.display_name+'';
+            data.license_metric = licGR.license_metric.name+'';
+            data.license_type = licGR.product_type+'';
+            data.license_unit_cost = licGR.unit_cost+'';
+            data.license_total_cost = licGR.cost+'';
+            data.licence_available_allocations = licGR.allocations_available+'';
+            list.push(samAuto.jsonParse(data));
+        }
+
+        var tableContent = JSON.stringify(list).replace(/"/g, "'");
+        var promptMessage = 'As a SAM (Software Asset Management) expert, analyze the provided data, offer license type optimization based on the metric and costs. Include a short explanation of a possible recommendation for each product. Create a table format with the results having a 2 decimal format. In the results include: license name, metric, type, unit cost, total cost, comments, and optimization suggested. Keep the same prices provided.';
+        message = promptMessage + ' from the following json data: ' + tableContent;
+        samAuto.openAIHelper(message, 2024, 0.8); 
+ 	*/
+    openAIHelper: function(message, maxTokens, temperature) {
+
+        //gs.print('Your message: ' + message);
+        if (gs.nil(message) || gs.nil(maxTokens) || gs.nil(temperature)) {
+            gs.print('Invalid call. Use the following example: new SAMAutomationUtils().openAIHelper("hello world", 1024, 0.8);');
+            return;
+        }
+
+        var restMsg = new sn_ws.RESTMessageV2('ChatGPT', 'POST turbo');
+        restMsg.setStringParameterNoEscape('model', 'gpt-3.5-turbo'); //text-davinci-003
+        restMsg.setStringParameterNoEscape('prompt', 'Act as an expert in software licensing. Create the answer always in JSON format.');
+        restMsg.setStringParameterNoEscape('question', message);
+        restMsg.setStringParameterNoEscape('max_tokens', 2024);
+        restMsg.setStringParameterNoEscape('temperature', temperature);
+        var msgResponse = restMsg.execute();
+
+        var msgBody = msgResponse.getBody();
+        var httpCode = msgResponse.getStatusCode();
+
+        if (httpCode == 200 || httpCode == 201) {
+
+            var parsedBody = JSON.parse(msgBody);
+            gs.print('AI Response: ' + parsedBody.choices[0].message.content);
+            gs.print('Tokens used: ' + parsedBody.usage.total_tokens + ', prompt_tokens: ' + parsedBody.usage.prompt_tokens + ', completion_tokens:' + parsedBody.usage.completion_tokens);
+            //var textAnswer = parsedBody.choices[0].text;
+            return JSON.parse(parsedBody.choices[0].message.content);
+
+        } else {
+            gs.print('Connection error. code: ' + httpCode + ', response: ' + JSON.stringify(msgBody, null, 2));
+        }
+    },
+
+    diffUserRoles: function(roles1, roles2) {
+
+        if (gs.nil(roles1) || gs.nil(roles2))
+            return;
+
+        var arrUsers1 = [];
+        var firstQuery = new GlideAggregate('sys_user_has_role');
+        firstQuery.addEncodedQuery('user.last_login_timeISNOTEMPTY^user.last_login_timeRELATIVEGT@dayofweek@ago@365^user.active=true^user.web_service_access_only!=true^user.internal_integration_user!=true^user.user_nameISNOTEMPTY^role.nameIN' + roles1);
+        firstQuery.groupBy('user');
+        firstQuery.query();
+        while (firstQuery.next()) {
+            //gs.print('first: '+firstQuery.user.user_name);
+            arrUsers1.push(firstQuery.user.user_name + '');
+        }
+        var arrUsers2 = [];
+        var secondQuery = new GlideAggregate('sys_user_has_role');
+        secondQuery.addEncodedQuery('user.last_login_timeISNOTEMPTY^user.last_login_timeRELATIVEGT@dayofweek@ago@365^user.active=true^user.web_service_access_only!=true^user.internal_integration_user!=true^user.user_nameISNOTEMPTY^role.nameIN' + roles2);
+        secondQuery.groupBy('user');
+        secondQuery.query();
+        while (secondQuery.next()) {
+            var userid = secondQuery.user.user_name + '';
+            //gs.print('second: ' + userid);
+
+            if (arrUsers1.indexOf(userid) == -1 && arrUsers2.indexOf(userid) == -1) {
+                arrUsers2.push(userid);
+            }
+        }
+        return arrUsers2;
+    },
+
+    //Create Test Data for Crayon Demo Dashboard
+    /*eg., groupName = 
+		ITSM - View Only
+		Platform - 1st Level Support (Fulfiller)
+		ITBM - PPS - Time Card - User (Worker)
+		ITBM - PPS - IT Project Manager (Planner)
+		Platform - Approver (Approver)
+		*/
+    createTestUsers: function(groupName, firsTestUser, lastTestUser, fromLastLogin, toLastLogin) {
+
+        if (gs.nil(groupName)) return;
+
+        if (gs.nil(firsTestUser) || gs.nil(lastTestUser)) {
+            firsTestUser = 0;
+            lastTestUser = 2;
+        }
+
+        //range to create the last login date
+        if (gs.nil(fromLastLogin) || gs.nil(toLastLogin)) {
+            fromLastLogin = new GlideDateTime('2021-08-01');
+            toLastLogin = new GlideDateTime('2023-09-29');
+        }
+
+        var newUser = new GlideRecord('sys_user');
+        newUser.initialize();
+        for (var i = firsTestUser; i < lastTestUser; i++) {
+            newUser.user_name = 'test_user_' + i;
+            newUser.first_name = 'Test' + i;
+            newUser.last_name = 'User' + i;
+            newUser.email = 'test_user_' + i + '@example.com';
+            var randomDate = generateRandomDate(new GlideDateTime(fromLastLogin), new GlideDateTime(toLastLogin));
+            //gs.print('date: '+randomDate);
+            newUser.last_login_time = randomDate;
+
+            var userSysId = '';
+            if (newUser.get('user_name', 'test_user_' + i)) {
+                newUser.last_login_time = randomDate;
+                newUser.insert();
+                userSysId = newUser.sys_id + '';
+            } else {
+                userSysId = newUser.insert();
+            }
+            //gs.print('userSysId: '+userSysId);
+
+            //add role to user adding it to a group
+            var userGroup = new GlideRecord('sys_user_group');
+            var newGroupMmbr = new GlideRecord('sys_user_grmember');
+            newGroupMmbr.initialize();
+            if (userGroup.get('name', groupName)) {
+                groupSysId = userGroup.sys_id + '';
+                //gs.print('groupSysId: '+groupSysId);
+
+                if (newGroupMmbr.get('user', userSysId) && newGroupMmbr.get('group', groupSysId)) {
+                    gs.print('group and user already exist.');
+                } else {
+                    newGroupMmbr.user = userSysId;
+                    newGroupMmbr.group = groupSysId;
+                    var answer = newGroupMmbr.insert();
+                    gs.print('answer: ' + answer);
+                }
+
+            } else {
+                gs.print('groupName: ' + groupName + ' does not exist or user already added.');
+            }
+        }
+
+        function generateRandomDate( /*[GlideDateTime]*/ start, /*[GlideDateTime]*/ end) {
+            var temp = new GlideDateTime();
+
+            if (start instanceof GlideDateTime && end instanceof GlideDateTime) {
+                temp.setValue(start.getValue());
+            } else {
+                temp.addYears(-1);
+                end = new GlideDateTime(); //now
+            }
+
+            var totalDays = Math.floor(gs.dateDiff(temp, end, true) / (60 * 60 * 24));
+            var rndSecs = Math.floor(Math.random() * (60 * 60 * 24)); //seconds in a day
+            temp.addSeconds(rndSecs);
+
+            var rndDays = Math.floor(Math.random() * totalDays) + 1;
+            temp.addDays(rndDays);
+            return temp;
+        }
+    },
+
+    type: 'SAMAutomationUtils'
+});]]></script>
+<sys_class_name>sys_script_include</sys_class_name>
+<sys_created_by>dpastrana</sys_created_by>
+<sys_created_on>2023-07-02 14:27:15</sys_created_on>
+<sys_id>e3d780e1dbb3e9507485dad1f39619b3</sys_id>
+<sys_mod_count>199</sys_mod_count>
+<sys_name>SAMAutomationUtils</sys_name>
+<sys_package display_value="Global" source="global">global</sys_package>
+<sys_policy/>
+<sys_scope display_value="Global">global</sys_scope>
+<sys_update_name>sys_script_include_e3d780e1dbb3e9507485dad1f39619b3</sys_update_name>
+<sys_updated_by>dpastrana</sys_updated_by>
+<sys_updated_on>2023-09-30 02:20:05</sys_updated_on>
+</sys_script_include>
+</unload>
